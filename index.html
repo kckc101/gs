@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Backdrop</title>
+<meta name="description" content="Replace the room behind you on camera with any photo, live. Runs in your browser on this device; nothing is uploaded.">
+<meta name="theme-color" content="#0d0e11">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Backdrop">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="styles.css">
+<link rel="modulepreload" href="vendor/mediapipe/vision_bundle.mjs">
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-flip" viewBox="0 0 24 24"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.3l1.4-2h7.6l1.4 2h2.3A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/><path d="M8.8 12.6a3.2 3.2 0 0 1 5.6-1.9M15.2 13.4a3.2 3.2 0 0 1-5.6 1.9"/><path d="M14.6 8.9v2h-2M9.4 17.1v-2h2"/></symbol>
+  <symbol id="i-pip" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11.5" width="6.5" height="5" rx="1" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="9" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M8 11H5v9h14v-9h-3"/></symbol>
+</svg>
+
+<div class="app">
+  <main class="stage" id="stage">
+    <video id="cam" class="feed" playsinline webkit-playsinline muted autoplay disablepictureinpicture aria-hidden="true"></video>
+    <canvas id="out" class="feed" role="img" aria-label="Live camera preview with your background"></canvas>
+    <video id="pip-video" class="pip-source" playsinline muted aria-hidden="true"></video>
+    <div class="flash" id="flash" aria-hidden="true"></div>
+
+    <header class="osd-top">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="3.5"/><circle cx="12" cy="10.5" r="3"/><path d="M6.4 20c.9-2.9 3-4.4 5.6-4.4s4.7 1.5 5.6 4.4"/></svg>
+        <span>Backdrop</span>
+      </div>
+      <p class="readout" id="readout" data-state="idle"><span class="readout-dot" aria-hidden="true"></span><span id="readout-text">Starting</span></p>
+      <div class="osd-actions">
+        <button type="button" class="glass-btn" id="btn-pip" hidden aria-label="Pop out preview" title="Pop out the preview into its own window"><svg class="ico" aria-hidden="true"><use href="#i-pip"/></svg></button>
+        <button type="button" class="glass-btn" id="btn-focus" aria-pressed="false" aria-label="Focus view" title="Focus view (F)"><svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg></button>
+      </div>
+    </header>
+
+    <div class="osd-bottom" id="controls" hidden>
+      <div class="slot slot-left">
+        <button type="button" class="glass-btn round" id="btn-flip" hidden aria-label="Switch camera" title="Switch camera"><svg class="ico" aria-hidden="true"><use href="#i-flip"/></svg></button>
+      </div>
+      <button type="button" class="shutter" id="btn-shot" aria-label="Take a photo" title="Take a photo (Space)"></button>
+      <div class="slot slot-right">
+        <button type="button" class="rec" id="btn-rec" aria-label="Start recording" title="Record a video (R)"><span class="rec-dot" aria-hidden="true"></span><span class="rec-time" id="rec-time">0:00</span></button>
+      </div>
+    </div>
+
+    <section class="gate" id="gate" aria-live="polite">
+      <div class="gate-card" id="gate-start">
+        <p class="eyebrow">Live background replacement</p>
+        <h1>Put any photo behind you.</h1>
+        <p class="lede">Backdrop cuts you out of your camera feed and sets you in front of a photo you choose, live. It all runs on this device. Your video and photos are never uploaded.</p>
+        <button type="button" class="btn-primary" id="btn-start">Start camera</button>
+        <div class="engine">
+          <div class="engine-track"><div class="engine-bar" id="engine-bar"></div></div>
+          <span id="engine-line">Loading cutout engine</span>
+        </div>
+        <div class="gate-warn" id="gate-warn" hidden>
+          <p>You opened this inside another app, and those often block the camera. If it doesn't start, open the page in Safari or Chrome.</p>
+          <button type="button" class="btn-ghost" id="btn-copy-link">Copy link</button>
+        </div>
+      </div>
+      <div class="gate-card gate-busy" id="gate-busy" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <p class="busy-text" id="busy-text">Starting camera…</p>
+        <p class="hint">If your browser asks, allow camera access.</p>
+      </div>
+      <div class="gate-card" id="gate-error" hidden>
+        <h2 id="err-title">The camera could not start</h2>
+        <p class="lede" id="err-body"></p>
+        <button type="button" class="btn-primary" id="btn-retry">Try again</button>
+      </div>
+    </section>
+
+    <div class="drop-hint" aria-hidden="true"><span>Drop a photo to make it your background</span></div>
+
+    <aside class="capture" id="capture" hidden aria-label="Your capture">
+      <div class="capture-media" id="capture-media"></div>
+      <div class="capture-row">
+        <a class="btn-chip" id="capture-save" href="#" download><svg class="ico" aria-hidden="true"><use href="#i-save"/></svg>Save</a>
+        <button type="button" class="btn-chip" id="capture-share" hidden><svg class="ico" aria-hidden="true"><use href="#i-share"/></svg>Share</button>
+        <button type="button" class="glass-btn small" id="capture-close" aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </div>
+      <p class="capture-name" id="capture-name"></p>
+    </aside>
+
+    <button type="button" class="exit-focus" id="exit-focus">Exit focus view</button>
+  </main>
+
+  <aside class="rail" id="rail" aria-label="Settings">
+    <nav class="tabs" role="tablist" aria-label="Settings sections">
+      <button type="button" role="tab" data-tab="bg" aria-selected="true">Background</button>
+      <button type="button" role="tab" data-tab="matte" aria-selected="false">Edges</button>
+      <button type="button" role="tab" data-tab="camera" aria-selected="false">Camera</button>
+      <button type="button" role="tab" data-tab="calls" aria-selected="false">Video calls</button>
+    </nav>
+
+    <section class="group" data-group="bg" aria-labelledby="h-bg">
+      <h2 id="h-bg">Background</h2>
+      <div class="tiles" id="tiles"></div>
+      <input type="file" id="file" accept="image/*,.heic,.heif" multiple hidden>
+      <p class="hint">Add a photo, drop one on the preview, or paste one. Photos are kept only in this browser.</p>
+
+      <div class="sub" id="framing" hidden>
+        <div class="sub-head"><h3>Framing</h3><button type="button" class="link-btn" id="btn-reset-framing">Reset</button></div>
+        <div class="field">
+          <div class="field-head"><label for="s-zoom">Zoom</label><output for="s-zoom"></output></div>
+          <input type="range" id="s-zoom" min="1" max="3" step="0.01" value="1">
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="s-plateBlur">Depth blur</label><output for="s-plateBlur"></output></div>
+          <input type="range" id="s-plateBlur" data-key="plateBlur" min="0" max="1" step="0.01">
+          <p class="field-hint">Defocuses the photo like a real lens, so you stand out from it.</p>
+        </div>
+        <p class="hint">Drag the preview to move the photo. Pinch or scroll to zoom, double-click to reset.</p>
+      </div>
+
+      <div class="sub" id="blur-controls" hidden>
+        <div class="field">
+          <div class="field-head"><label for="s-blurStrength">Blur strength</label><output for="s-blurStrength"></output></div>
+          <input type="range" id="s-blurStrength" data-key="blurStrength" min="0" max="1" step="0.01">
+        </div>
+      </div>
+    </section>
+
+    <section class="group" data-group="matte" aria-labelledby="h-matte">
+      <div class="sub-head"><h2 id="h-matte">Edges</h2><button type="button" class="link-btn" id="btn-reset-matte">Reset</button></div>
+      <p class="hint" id="matte-off-note" hidden>Pick a background to adjust the edges.</p>
+      <div id="matte-fields" class="fields">
+        <div class="field">
+          <div class="field-head"><label for="s-choke">Edge position</label><output for="s-choke"></output></div>
+          <input type="range" id="s-choke" data-key="choke" min="-1" max="1" step="0.01">
+          <p class="field-hint">Raise it to pull the outline in and hide halos. Lower it to keep more hair.</p>
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="s-feather">Edge softness</label><output for="s-feather"></output></div>
+          <input type="range" id="s-feather" data-key="feather" min="0" max="1" step="0.01">
+          <p class="field-hint">Softens the outline so you blend into the scene.</p>
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="s-wrap">Light wrap</label><output for="s-wrap"></output></div>
+          <input type="range" id="s-wrap" data-key="wrap" min="0" max="1" step="0.01">
+          <p class="field-hint">Lets light from the background spill around your edges.</p>
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="s-match">Match lighting</label><output for="s-match"></output></div>
+          <input type="range" id="s-match" data-key="match" min="0" max="1" step="0.01">
+          <p class="field-hint">Tints you toward the background's colour and brightness.</p>
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="s-stability">Steadiness</label><output for="s-stability"></output></div>
+          <input type="range" id="s-stability" data-key="stability" min="0" max="0.9" step="0.01">
+          <p class="field-hint">Calms flicker at the edges. Lower it if quick moves leave a trail.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="group" data-group="camera" aria-labelledby="h-cam">
+      <h2 id="h-cam">Camera</h2>
+      <div class="field">
+        <label for="sel-camera">Camera</label>
+        <select id="sel-camera"><option value="">Default camera</option></select>
+      </div>
+      <div class="field">
+        <label for="sel-res">Resolution</label>
+        <select id="sel-res">
+          <option value="480">480p · lightest</option>
+          <option value="720">720p · recommended</option>
+          <option value="1080">1080p · sharpest</option>
+        </select>
+      </div>
+      <label class="switch"><input type="checkbox" id="t-mirror" data-key="mirror"><span class="switch-ui" aria-hidden="true"></span><span>Mirror my video</span></label>
+      <fieldset class="field">
+        <legend>Cutout quality</legend>
+        <div class="segmented">
+          <label><input type="radio" name="model" value="fast"><span>Fast<small>Light, any device</small></span></label>
+          <label><input type="radio" name="model" value="best"><span>Best<small>Cleaner hair · 16 MB</small></span></label>
+        </div>
+      </fieldset>
+      <div class="field">
+        <label for="sel-delegate">Processing</label>
+        <select id="sel-delegate">
+          <option value="auto">Automatic</option>
+          <option value="GPU">Graphics chip (GPU)</option>
+          <option value="CPU">Processor (CPU)</option>
+        </select>
+        <p class="field-hint">Choose Processor if the cutout looks wrong or blank on this device.</p>
+      </div>
+      <label class="switch"><input type="checkbox" id="t-audio" data-key="recordAudio"><span class="switch-ui" aria-hidden="true"></span><span>Record sound with videos</span></label>
+      <p class="note" id="basic-note" hidden>This browser has no WebGL 2, so Backdrop is using its basic renderer. Edges are simpler and light wrap is off.</p>
+    </section>
+
+    <section class="group" data-group="calls" aria-labelledby="h-calls">
+      <h2 id="h-calls">Use it in video calls</h2>
+      <p class="prose">Zoom, Teams, Google Meet and most call apps can't use a browser tab as a camera. The free OBS Studio app connects the two with its Virtual Camera.</p>
+      <ol class="steps">
+        <li>Install <a href="https://obsproject.com" target="_blank" rel="noopener">OBS Studio</a> and open it.</li>
+        <li>Here, press <strong>Pop out</strong> at the top of the preview and keep that small window visible. If your browser has no Pop out, use <strong>Focus view</strong> instead.</li>
+        <li>In OBS, add a <strong>Window Capture</strong> source and pick that window.</li>
+        <li>Press <strong>Start Virtual Camera</strong> in OBS.</li>
+        <li>In your call app, choose <strong>OBS Virtual Camera</strong> as the camera.</li>
+      </ol>
+      <p class="hint">To key yourself over slides or a game, pick <strong>Green screen</strong> and add a Chroma Key filter in OBS.</p>
+      <p class="hint">On a phone or tablet, take photos or record clips here, then share them to any app.</p>
+    </section>
+
+    <footer class="rail-foot">
+      <button type="button" class="btn-ghost" id="btn-install" hidden>Install app</button>
+      <p>Runs on this device. Nothing is uploaded.</p>
+    </footer>
+  </aside>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-text"></span><button type="button" id="toast-action" hidden></button></div>
+<noscript><div class="legacy">Backdrop needs JavaScript. Turn it on and reload the page.</div></noscript>
+<div class="legacy" id="legacy" hidden>This browser is too old for Backdrop. Open it in a current version of Chrome, Edge, Safari or Firefox.</div>
+<script nomodule>document.getElementById('legacy').hidden = false;</script>
+</body>
+</html>

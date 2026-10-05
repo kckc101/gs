@@ -1,0 +1,3 @@
+*.wasm binary
+*.tflite binary
+*.png binary
